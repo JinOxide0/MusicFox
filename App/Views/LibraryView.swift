@@ -7,6 +7,7 @@ struct LibraryView: View {
     @State private var sort: SortOption = .title
     @State private var isSelecting = false
     @State private var selectedIDs = Set<String>()
+    @State private var selectedOrder: [String] = []
     @State private var showPlaylistPicker = false
 
     private enum SortOption: String, CaseIterable, Identifiable {
@@ -47,7 +48,7 @@ struct LibraryView: View {
 
     private var selectedTracks: [Track] {
         let map = Dictionary(uniqueKeysWithValues: model.tracks.map { ($0.id, $0) })
-        return selectedIDs.compactMap { map[$0] }
+        return selectedOrder.compactMap { map[$0] }
     }
 
     private var allFilteredSelected: Bool {
@@ -57,8 +58,10 @@ struct LibraryView: View {
     private func toggleSelection(_ track: Track) {
         if selectedIDs.contains(track.id) {
             selectedIDs.remove(track.id)
+            selectedOrder.removeAll { $0 == track.id }
         } else {
             selectedIDs.insert(track.id)
+            selectedOrder.append(track.id)
         }
     }
 
@@ -70,6 +73,7 @@ struct LibraryView: View {
     private func exitSelection() {
         isSelecting = false
         selectedIDs.removeAll()
+        selectedOrder.removeAll()
     }
 
     @ViewBuilder
@@ -103,9 +107,14 @@ struct LibraryView: View {
             Spacer(minLength: 2)
             Button(allFilteredSelected ? "取消全选" : "全选") {
                 if allFilteredSelected {
-                    selectedIDs.subtract(filteredTracks.map(\.id))
+                    let ids = Set(filteredTracks.map(\.id))
+                    selectedIDs.subtract(ids)
+                    selectedOrder.removeAll { ids.contains($0) }
                 } else {
-                    selectedIDs.formUnion(filteredTracks.map(\.id))
+                    for track in filteredTracks where !selectedIDs.contains(track.id) {
+                        selectedIDs.insert(track.id)
+                        selectedOrder.append(track.id)
+                    }
                 }
             }
             .font(.system(size: 12, weight: .semibold))

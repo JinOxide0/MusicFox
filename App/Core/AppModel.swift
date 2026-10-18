@@ -96,7 +96,6 @@ final class AppModel {
             tracks = snapshot.tracks
             playlists = snapshot.playlists
             player.handleLibraryChange(tracks)
-            player.setQueue(tracks, keepCurrent: true)
         } catch {
             errorMessage = error.localizedDescription
         }

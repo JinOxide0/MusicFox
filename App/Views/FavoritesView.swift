@@ -9,6 +9,7 @@ struct FavoritesView: View {
     @State private var deletingPlaylist: Playlist?
     @State private var isSelecting = false
     @State private var selectedIDs = Set<String>()
+    @State private var selectedOrder: [String] = []
     @State private var showPlaylistPicker = false
 
     var body: some View {
@@ -69,7 +70,8 @@ struct FavoritesView: View {
     }
 
     private var selectedFavorites: [Track] {
-        model.favoriteTracks.filter { selectedIDs.contains($0.id) }
+        let map = Dictionary(uniqueKeysWithValues: model.favoriteTracks.map { ($0.id, $0) })
+        return selectedOrder.compactMap { map[$0] }
     }
 
     private var allFavoritesSelected: Bool {
@@ -79,14 +81,17 @@ struct FavoritesView: View {
     private func toggleSelection(_ track: Track) {
         if selectedIDs.contains(track.id) {
             selectedIDs.remove(track.id)
+            selectedOrder.removeAll { $0 == track.id }
         } else {
             selectedIDs.insert(track.id)
+            selectedOrder.append(track.id)
         }
     }
 
     private func exitSelection() {
         isSelecting = false
         selectedIDs.removeAll()
+        selectedOrder.removeAll()
     }
 
     @ViewBuilder
@@ -121,8 +126,12 @@ struct FavoritesView: View {
             Button(allFavoritesSelected ? "取消全选" : "全选") {
                 if allFavoritesSelected {
                     selectedIDs.removeAll()
+                    selectedOrder.removeAll()
                 } else {
-                    selectedIDs.formUnion(model.favoriteTracks.map(\.id))
+                    for track in model.favoriteTracks where !selectedIDs.contains(track.id) {
+                        selectedIDs.insert(track.id)
+                        selectedOrder.append(track.id)
+                    }
                 }
             }
             .font(.system(size: 12, weight: .semibold))
@@ -191,7 +200,20 @@ struct FavoritesView: View {
     @ViewBuilder
     private var favorites: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "喜欢的歌曲")
+            if model.favoriteTracks.isEmpty {
+                SectionHeader(title: "喜欢的歌曲")
+            } else {
+                SectionHeader(
+                    title: "喜欢的歌曲",
+                    actionTitle: isSelecting ? "取消" : "多选"
+                ) {
+                    if isSelecting {
+                        exitSelection()
+                    } else {
+                        isSelecting = true
+                    }
+                }
+            }
             if model.favoriteTracks.isEmpty {
                 EmptyStateView(
                     icon: "heart",
@@ -373,7 +395,10 @@ struct PlaylistDetailView: View {
                             TrackRow(
                                 track: track,
                                 showAlbum: true,
-                                removeFromPlaylist: current
+                                removeFromPlaylist: current,
+                                onPlay: {
+                                    model.player.playPlaylist(items, startingAt: index)
+                                }
                             )
                             if index < items.count - 1 {
                                 Divider().overlay(Palette.stroke).padding(.leading, 64)

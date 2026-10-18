@@ -97,6 +97,13 @@ final class Player {
         let newQueue = queue ?? [track]
         self.queue = newQueue
         queueIndex = newQueue.firstIndex(where: { $0.id == track.id }) ?? 0
+        startTrack(at: queueIndex)
+    }
+
+    private func startTrack(at index: Int) {
+        guard queue.indices.contains(index) else { return }
+        queueIndex = index
+        let track = queue[index]
         currentTrack = track
         currentRemote = nil
         remoteArtwork = nil
@@ -180,7 +187,7 @@ final class Player {
             }
         }
         queueIndex = nextIndex
-        play(track: queue[nextIndex], queue: queue)
+        startTrack(at: nextIndex)
     }
 
     func previous() {
@@ -198,7 +205,7 @@ final class Player {
             return
         }
         queueIndex = previousIndex
-        play(track: queue[previousIndex], queue: queue)
+        startTrack(at: previousIndex)
     }
 
     func cycleRepeatMode() {
@@ -213,8 +220,10 @@ final class Player {
         guard !tracks.isEmpty else { return }
         let safeIndex = max(0, min(index, tracks.count - 1))
         queue = tracks
-        queueIndex = safeIndex
-        play(track: tracks[safeIndex], queue: tracks)
+        // Playing a playlist should preserve its displayed order. Shuffle can
+        // still be turned on explicitly afterwards.
+        shuffle = false
+        startTrack(at: safeIndex)
     }
 
     func setQueue(_ tracks: [Track], keepCurrent: Bool) {

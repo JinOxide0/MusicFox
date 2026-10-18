@@ -9,6 +9,7 @@ struct TrackRow: View {
     var selectionMode = false
     var isSelected = false
     var onToggleSelection: (() -> Void)? = nil
+    var onPlay: (() -> Void)? = nil
 
     private var isCurrent: Bool {
         model.player.currentTrack?.id == track.id
@@ -17,6 +18,8 @@ struct TrackRow: View {
     private func handleTap() {
         if selectionMode {
             onToggleSelection?()
+        } else if let onPlay {
+            onPlay()
         } else {
             model.play(track)
         }
@@ -117,7 +120,11 @@ struct TrackRow: View {
                 }
             } else {
             Button {
-                model.play(track)
+                if let onPlay {
+                    onPlay()
+                } else {
+                    model.play(track)
+                }
             } label: {
                 Label("播放", systemImage: "play.fill")
             }
