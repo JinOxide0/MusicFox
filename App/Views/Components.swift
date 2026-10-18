@@ -237,9 +237,14 @@ struct RemoteTrackRow: View {
             Text(track.durationText)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Palette.textTertiary)
-            Image(systemName: isCurrent && model.player.isPlaying ? "waveform" : "play.circle.fill")
-                .font(.system(size: 25))
-                .foregroundStyle(isCurrent ? Palette.cyan : Palette.textSecondary)
+            if model.resolvingRemoteId == track.id {
+                ProgressView()
+                    .tint(Palette.cyan)
+            } else {
+                Image(systemName: isCurrent && model.player.isPlaying ? "waveform" : "play.circle.fill")
+                    .font(.system(size: 25))
+                    .foregroundStyle(isCurrent ? Palette.cyan : Palette.textSecondary)
+            }
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())

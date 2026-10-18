@@ -1,6 +1,7 @@
 mod ffi;
 mod http;
 mod library;
+mod lx;
 mod lyrics;
 mod model;
 mod ncm;

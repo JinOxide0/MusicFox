@@ -286,7 +286,9 @@ fn handle(cmd: &str, payload: &Value) -> Result<Value, String> {
                 .get("quality")
                 .and_then(Value::as_str)
                 .unwrap_or("128k");
-            let result = source::resolve_remote(provider, id, quality)?;
+            let music_info = music_info_from_payload(payload, provider, id);
+            let result =
+                source::resolve_with_sources(&state.sources, provider, id, quality, &music_info)?;
             Ok(serde_json::to_value(result).map_err(|e| e.to_string())?)
         }
         "source.lyrics" => {
@@ -298,8 +300,9 @@ fn handle(cmd: &str, payload: &Value) -> Result<Value, String> {
                 .get("id")
                 .and_then(Value::as_str)
                 .ok_or("缺少歌曲 ID")?;
-            let raw = source::remote_lyrics(provider, id)?;
-            Ok(serde_json::to_value(lyrics::result_from_raw(&raw, "网易云"))
+            let music_info = music_info_from_payload(payload, provider, id);
+            let raw = source::lyrics_with_sources(&state.sources, provider, id, &music_info)?;
+            Ok(serde_json::to_value(lyrics::result_from_raw(&raw, "在线音源"))
                 .map_err(|e| e.to_string())?)
         }
         "system.info" => Ok(json!({
@@ -311,6 +314,39 @@ fn handle(cmd: &str, payload: &Value) -> Result<Value, String> {
         })),
         _ => Err(format!("未知命令: {cmd}")),
     }
+}
+
+fn music_info_from_payload(payload: &Value, provider: &str, id: &str) -> Value {
+    let title = payload.get("title").and_then(Value::as_str).unwrap_or("");
+    let artist = payload.get("artist").and_then(Value::as_str).unwrap_or("");
+    let album = payload.get("album").and_then(Value::as_str).unwrap_or("");
+    let cover = payload.get("cover").and_then(Value::as_str).unwrap_or("");
+    let duration = payload.get("duration").and_then(Value::as_f64).unwrap_or(0.0);
+    let total = duration.round() as u64;
+    let numeric_id = id.parse::<u64>().ok();
+    let id_value = numeric_id
+        .map(|v| Value::Number(v.into()))
+        .unwrap_or_else(|| Value::String(id.to_string()));
+
+    json!({
+        "songmid": id_value,
+        "songId": id_value,
+        "id": id_value,
+        "hash": id,
+        "name": title,
+        "title": title,
+        "singer": artist,
+        "artist": artist,
+        "albumName": album,
+        "album": album,
+        "albumId": Value::Null,
+        "interval": format!("{}:{:02}", total / 60, total % 60),
+        "duration": total * 1000,
+        "img": cover,
+        "source": provider,
+        "copyrightId": "",
+        "strMediaMid": ""
+    })
 }
 
 #[no_mangle]

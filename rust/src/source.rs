@@ -2,8 +2,10 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::http;
+use crate::lx;
 use crate::model::{RemoteTrack, ResolveResult, SearchResult, SourceInfo};
 use crate::store::{now_secs, Store};
 
@@ -107,6 +109,51 @@ pub fn search(provider: &str, keyword: &str, page: usize, limit: usize) -> Resul
     }
 }
 
+pub fn resolve_with_sources(
+    sources: &[SourceInfo],
+    provider: &str,
+    id: &str,
+    quality: &str,
+    music_info: &Value,
+) -> Result<ResolveResult, String> {
+    let mut qualities = vec![quality.to_string()];
+    for fallback in ["flac24bit", "flac", "320k", "128k"] {
+        if !qualities.iter().any(|q| q == fallback) {
+            qualities.push(fallback.to_string());
+        }
+    }
+
+    for info in sources.iter().filter(|s| s.enabled) {
+        let Ok(script) = lx::read_script(&info.script_path) else { continue };
+        for item_quality in &qualities {
+            if let Ok(url) = lx::resolve(&script, info, provider, item_quality, music_info.clone()) {
+                return Ok(ResolveResult {
+                    url,
+                    quality: item_quality.clone(),
+                    source: info.name.clone(),
+                });
+            }
+        }
+    }
+
+    resolve_remote(provider, id, quality)
+}
+
+pub fn lyrics_with_sources(
+    sources: &[SourceInfo],
+    provider: &str,
+    id: &str,
+    music_info: &Value,
+) -> Result<String, String> {
+    for info in sources.iter().filter(|s| s.enabled) {
+        let Ok(script) = lx::read_script(&info.script_path) else { continue };
+        if let Ok(lyric) = lx::lyric(&script, info, provider, music_info.clone()) {
+            return Ok(lyric);
+        }
+    }
+    remote_lyrics(provider, id)
+}
+
 pub fn resolve_remote(
     provider: &str,
     id: &str,
@@ -185,7 +232,7 @@ pub fn import_source(
     let script_path = store.sources_dir.join(format!("{id}.js"));
     fs::write(&script_path, script).map_err(|e| format!("保存音源失败: {e}"))?;
 
-    let info = SourceInfo {
+    let mut info = SourceInfo {
         id,
         name,
         description: header.description.unwrap_or_default(),
@@ -195,8 +242,24 @@ pub fn import_source(
         script_path: script_path.to_string_lossy().to_string(),
         enabled: true,
         sources: vec![],
-        status: "已导入，音源引擎将在下一阶段激活".into(),
+        status: "已导入".into(),
     };
+    match crate::lx::probe_script(script, &info) {
+        Ok(inited) => {
+            if let Some(object) = inited.get("sources").and_then(Value::as_object) {
+                info.sources = object.keys().cloned().collect();
+                info.sources.sort();
+            }
+            if info.sources.is_empty() {
+                info.status = "已加载 · 未声明可用平台".into();
+            } else {
+                info.status = format!("已加载 · 支持 {}", info.sources.join(" / "));
+            }
+        }
+        Err(error) => {
+            info.status = format!("已导入 · 加载失败: {}", error.chars().take(80).collect::<String>());
+        }
+    }
     sources.push(info.clone());
     let _ = store.save_sources(sources);
     Ok(info)

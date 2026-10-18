@@ -444,7 +444,15 @@ final class Player {
             do {
                 let result: LyricsResult = try await RustCore.shared.callAsync(
                     "source.lyrics",
-                    ["provider": track.source, "id": track.id],
+                    [
+                        "provider": track.source,
+                        "id": track.id,
+                        "title": track.title,
+                        "artist": track.artist,
+                        "album": track.album,
+                        "cover": track.coverUrl ?? "",
+                        "duration": track.duration
+                    ],
                     as: LyricsResult.self
                 )
                 guard !Task.isCancelled, self.currentRemote?.id == track.id else { return }

@@ -278,6 +278,7 @@ struct PlaylistDetailView: View {
         .background(AppBackground())
         .navigationTitle(current.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(Palette.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {

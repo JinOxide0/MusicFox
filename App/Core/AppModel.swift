@@ -19,6 +19,7 @@ final class AppModel {
     var importStatus: String?
     var errorMessage: String?
     var resolveQuality = "flac"
+    var resolvingRemoteId: String?
 
     let player = Player()
 
@@ -143,14 +144,22 @@ final class AppModel {
     }
 
     func playRemote(_ track: RemoteTrack) {
+        guard resolvingRemoteId == nil else { return }
+        resolvingRemoteId = track.id
         Task {
+            defer { resolvingRemoteId = nil }
             do {
                 let resolved: ResolveResult = try await RustCore.shared.callAsync(
                     "source.resolve",
                     [
                         "provider": track.source,
                         "id": track.id,
-                        "quality": resolveQuality
+                        "quality": resolveQuality,
+                        "title": track.title,
+                        "artist": track.artist,
+                        "album": track.album,
+                        "cover": track.coverUrl ?? "",
+                        "duration": track.duration
                     ],
                     as: ResolveResult.self
                 )
@@ -159,6 +168,7 @@ final class AppModel {
                     return
                 }
                 player.playRemote(track: track, url: url)
+                player.showNowPlaying = true
             } catch {
                 errorMessage = error.localizedDescription
             }

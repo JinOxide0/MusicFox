@@ -9,6 +9,7 @@ pub fn agent() -> &'static Agent {
     AGENT.get_or_init(|| {
         Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(12)))
+            .http_status_as_error(false)
             .user_agent("MusicFox/0.1 (iOS; +https://github.com/JinOxide0/MusicFox)")
             .build()
             .into()
