@@ -26,7 +26,7 @@ struct LibraryView: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 10)
-                .padding(.bottom, 130)
+                .padding(.bottom, 160)
             }
             .scrollIndicators(.hidden)
             .toolbar(.hidden, for: .navigationBar)
@@ -143,7 +143,7 @@ struct LibraryView: View {
     }
 
     private var songList: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             ForEach(Array(filteredTracks.enumerated()), id: \.element.id) { index, track in
                 TrackRow(track: track, showAlbum: true)
                 if index < filteredTracks.count - 1 {

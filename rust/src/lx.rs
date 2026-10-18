@@ -542,7 +542,7 @@ struct RunOutput {
     result: Option<Value>,
 }
 
-fn run_script(script: &str, info: &SourceInfo, action: Option<Value>) -> Result<RunOutput, String> {
+fn run_script(script: &str, info: &SourceInfo, action: Option<Value>, online: bool) -> Result<RunOutput, String> {
     let runtime = Runtime::new().map_err(|e| format!("创建 JS 运行时失败: {e}"))?;
     let context = Context::full(&runtime).map_err(|e| format!("创建 JS 上下文失败: {e}"))?;
     let inited_store: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
@@ -564,8 +564,12 @@ fn run_script(script: &str, info: &SourceInfo, action: Option<Value>) -> Result<
         .map_err(|e| e.to_string())?;
         globals.set("__mf_inited", inited_fn).map_err(|e| e.to_string())?;
 
-        let http_fn = Function::new(ctx.clone(), |url: String, options: String| -> String {
-            host_http(&url, &options)
+        let http_fn = Function::new(ctx.clone(), move |url: String, options: String| -> String {
+            if online {
+                host_http(&url, &options)
+            } else {
+                json!({ "error": "音源导入探测：跳过网络请求" }).to_string()
+            }
         })
         .map_err(|e| e.to_string())?;
         globals.set("__mf_http", http_fn).map_err(|e| e.to_string())?;
@@ -679,7 +683,7 @@ fn run_script(script: &str, info: &SourceInfo, action: Option<Value>) -> Result<
 }
 
 pub fn probe_script(script: &str, info: &SourceInfo) -> Result<Value, String> {
-    let output = run_script(script, info, None)?;
+    let output = run_script(script, info, None, false)?;
     Ok(output.inited.unwrap_or(Value::Null))
 }
 
@@ -698,7 +702,7 @@ pub fn resolve(
             "musicInfo": music_info
         }
     });
-    let output = run_script(script, info, Some(payload))?;
+    let output = run_script(script, info, Some(payload), true)?;
     let result = output.result.ok_or_else(|| "音源没有返回结果".to_string())?;
     let url = match result {
         Value::String(url) => url,
@@ -729,7 +733,7 @@ pub fn lyric(
             "musicInfo": music_info
         }
     });
-    let output = run_script(script, info, Some(payload))?;
+    let output = run_script(script, info, Some(payload), true)?;
     let result = output.result.ok_or_else(|| "音源没有返回歌词".to_string())?;
     let lyric = match result {
         Value::String(text) => text,

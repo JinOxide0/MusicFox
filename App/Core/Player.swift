@@ -218,6 +218,7 @@ final class Player {
     }
 
     func setQueue(_ tracks: [Track], keepCurrent: Bool) {
+        guard currentRemote == nil else { return }
         guard keepCurrent, let currentTrack else {
             queue = tracks
             return

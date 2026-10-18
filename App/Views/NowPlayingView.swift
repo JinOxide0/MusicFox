@@ -450,7 +450,7 @@ struct QueueView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     if model.player.queue.isEmpty {
                         EmptyStateView(
                             icon: "list.bullet",

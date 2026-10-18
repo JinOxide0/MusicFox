@@ -18,7 +18,7 @@ struct FavoritesView: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 10)
-                .padding(.bottom, 130)
+                .padding(.bottom, 160)
             }
             .scrollIndicators(.hidden)
             .toolbar(.hidden, for: .navigationBar)
@@ -91,7 +91,7 @@ struct FavoritesView: View {
                     subtitle: "在播放页或歌曲列表点一下爱心，\n喜欢的歌就会出现在这里。"
                 )
             } else {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(model.favoriteTracks.enumerated()), id: \.element.id) { index, track in
                         TrackRow(track: track, showAlbum: true)
                         if index < model.favoriteTracks.count - 1 {
@@ -254,7 +254,7 @@ struct PlaylistDetailView: View {
                         subtitle: "在歌曲的右键菜单里选择「加入歌单」，\n把喜欢的歌放进来。"
                     )
                 } else {
-                    VStack(spacing: 0) {
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, track in
                             TrackRow(
                                 track: track,
@@ -272,7 +272,7 @@ struct PlaylistDetailView: View {
             }
             .padding(.horizontal, 18)
             .padding(.top, 8)
-            .padding(.bottom, 130)
+            .padding(.bottom, 160)
         }
         .scrollIndicators(.hidden)
         .background(AppBackground())

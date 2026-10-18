@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use ncmdump::Ncmdump;
 
 use crate::library::{write_sidecar, SidecarMeta};
-use crate::lyrics::fetch_netease_lyrics;
 use crate::model::{ImportResult, NcmImportSummary};
 use crate::store::Store;
 
@@ -120,19 +119,13 @@ fn decrypt_one(store: &Store, source: &Path) -> Result<ImportResult, String> {
     }
 
     let netease_id = info.as_ref().map(|i| i.id).filter(|id| *id > 0);
-    let lyrics = netease_id.and_then(fetch_netease_lyrics);
-
-    if let Some(lyrics) = lyrics.as_deref() {
-        let lrc_path = output.with_extension("lrc");
-        let _ = fs::write(lrc_path, lyrics);
-    }
 
     let meta = SidecarMeta {
         title: Some(title.clone()),
         artist: Some(artist.clone()),
         album: Some(album.clone()),
         album_artist: Some(artist.clone()),
-        lyrics: lyrics.clone(),
+        lyrics: None,
         netease_id,
         ..Default::default()
     };

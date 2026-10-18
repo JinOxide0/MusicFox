@@ -18,7 +18,7 @@ struct NeteaseSearchResponse {
 struct NeteaseSearchResult {
     #[serde(default)]
     songs: Vec<NeteaseSong>,
-    #[serde(default)]
+    #[serde(default, rename = "songCount")]
     song_count: usize,
 }
 
@@ -298,4 +298,26 @@ pub fn toggle_source(
         let _ = store.save_sources(sources);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+
+    #[test]
+    fn imports_reference_lx_source_if_available() {
+        let path = "/tmp/opencode/lx-latest.js";
+        let Ok(script) = fs::read_to_string(path) else { return };
+        let dir = std::env::temp_dir().join(format!("musicfox-source-{}", std::process::id()));
+        let store = Store::new(dir.join("support"), dir.join("docs")).unwrap();
+        let mut sources = Vec::new();
+        let info = import_source(&store, &mut sources, &script, Some("pdone".into()))
+            .expect("import source");
+        eprintln!("status: {}", info.status);
+        eprintln!("sources: {:?}", info.sources);
+        assert!(info.sources.contains(&"wy".to_string()));
+        assert!(sources.len() == 1);
+        let _ = fs::remove_dir_all(dir);
+    }
 }

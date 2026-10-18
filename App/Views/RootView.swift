@@ -38,7 +38,7 @@ struct RootView: View {
             if player.hasCurrent {
                 MiniPlayer()
                     .padding(.horizontal, 12)
-                    .padding(.bottom, 84)
+                    .padding(.bottom, 56)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
