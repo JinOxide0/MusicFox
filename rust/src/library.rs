@@ -541,3 +541,46 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 }
+
+#[cfg(test)]
+mod management_tests {
+    use super::*;
+
+    fn make_flac(path: &Path) -> bool {
+        std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=2"])
+            .args(["-metadata", "title=重复歌曲", "-metadata", "artist=测试歌手", "-metadata", "album=测试专辑"])
+            .arg(path)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn removes_duplicate_tracks_and_playlist_entries() {
+        let dir = std::env::temp_dir().join(format!("musicfox-dedupe-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let store = Store::new(dir.join("support"), dir.join("docs")).unwrap();
+        let a = store.media_dir.join("a.flac");
+        let b = store.media_dir.join("b.flac");
+        if !make_flac(&a) || !make_flac(&b) {
+            return;
+        }
+        let mut library = scan(&store, &LibraryData::default()).unwrap();
+        assert_eq!(library.tracks.len(), 2);
+        let first = library.tracks[0].clone();
+        let second = library.tracks[1].clone();
+        let playlist = create_playlist(&mut library, "测试歌单").unwrap();
+        add_to_playlist(&mut library, &playlist.id, &first.id, true).unwrap();
+        add_to_playlist(&mut library, &playlist.id, &second.id, true).unwrap();
+        assert_eq!(library.playlists[0].track_ids.len(), 1);
+        assert_eq!(dedupe_playlist(&mut library, &playlist.id).unwrap(), 0);
+
+        let removed = dedupe_library(&store, &mut library, true).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(library.tracks.len(), 1);
+        let remaining = fs::read_dir(&store.media_dir).unwrap().count();
+        assert_eq!(remaining, 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+}

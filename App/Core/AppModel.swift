@@ -306,6 +306,9 @@ final class AppModel {
     }
 
     func removeTrack(_ track: Track) async {
+        if player.currentTrack?.id == track.id {
+            player.stop()
+        }
         do {
             let snapshot: LibrarySnapshot = try await RustCore.shared.callAsync(
                 "library.remove",
