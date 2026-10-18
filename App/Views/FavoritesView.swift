@@ -285,6 +285,11 @@ struct PlaylistDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
+                        Task { await model.dedupePlaylist(current) }
+                    } label: {
+                        Label("移除重复歌曲", systemImage: "square.on.square")
+                    }
+                    Button {
                         renameText = current.name
                         showRename = true
                     } label: {

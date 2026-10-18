@@ -320,6 +320,28 @@ struct LoadingOverlay: View {
     }
 }
 
+struct NoticeBar: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Palette.cyan)
+            Text(text)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Palette.stroke, lineWidth: 1))
+        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+        .padding(.top, 6)
+    }
+}
+
 struct ImportStatusBar: View {
     let text: String
 

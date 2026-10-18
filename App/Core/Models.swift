@@ -47,6 +47,20 @@ struct Track: Codable, Identifiable, Hashable {
         let total = Int(duration.rounded())
         return String(format: "%d:%02d", total / 60, total % 60)
     }
+
+    var songKey: String {
+        let normalizedTitle = title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        let normalizedArtist = artist
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        return "\(normalizedTitle)|\(normalizedArtist)|\(Int(duration.rounded()))"
+    }
 }
 
 struct Playlist: Codable, Identifiable, Hashable {
@@ -110,6 +124,23 @@ struct ImportResult: Codable, Identifiable {
 struct NcmImportSummary: Codable {
     var imported: [ImportResult]
     var errors: [String]
+    var skipped: [String]
+}
+
+struct PlaylistAddResponse: Codable {
+    var playlists: [Playlist]
+    var added: Bool
+}
+
+struct PlaylistDedupeResponse: Codable {
+    var playlists: [Playlist]
+    var removed: Int
+}
+
+struct LibraryDedupeResponse: Codable {
+    var removed: Int
+    var tracks: [Track]
+    var playlists: [Playlist]
 }
 
 struct RemoteTrack: Codable, Identifiable, Hashable {

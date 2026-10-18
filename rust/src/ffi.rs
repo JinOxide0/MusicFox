@@ -153,12 +153,39 @@ fn handle(cmd: &str, payload: &Value) -> Result<Value, String> {
                 .get("trackId")
                 .and_then(Value::as_str)
                 .ok_or("缺少歌曲 ID")?;
-            library::add_to_playlist(&mut state.library, id, track_id)?;
+            let skip_duplicates = payload
+                .get("skipDuplicates")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let added = library::add_to_playlist(
+                &mut state.library,
+                id,
+                track_id,
+                skip_duplicates,
+            )?;
             state
                 .store
                 .save_library(&state.library)
                 .map_err(|e| format!("保存失败: {e}"))?;
-            Ok(json!({ "playlists": state.library.playlists }))
+            Ok(json!({
+                "playlists": state.library.playlists,
+                "added": added
+            }))
+        }
+        "playlist.dedupe" => {
+            let id = payload
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("缺少歌单 ID")?;
+            let removed = library::dedupe_playlist(&mut state.library, id)?;
+            state
+                .store
+                .save_library(&state.library)
+                .map_err(|e| format!("保存失败: {e}"))?;
+            Ok(json!({
+                "playlists": state.library.playlists,
+                "removed": removed
+            }))
         }
         "playlist.remove" => {
             let id = payload
@@ -181,8 +208,52 @@ fn handle(cmd: &str, payload: &Value) -> Result<Value, String> {
                 .get("paths")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .ok_or("缺少文件列表")?;
-            Ok(serde_json::to_value(ncm::decrypt_batch(&state.store, &paths))
-                .map_err(|e| e.to_string())?)
+            let skip_duplicates = payload
+                .get("skipDuplicates")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            Ok(serde_json::to_value(ncm::decrypt_batch(
+                &state.store,
+                &state.library,
+                &paths,
+                skip_duplicates,
+            ))
+            .map_err(|e| e.to_string())?)
+        }
+        "library.remove" => {
+            let id = payload
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("缺少歌曲 ID")?;
+            let delete_file = payload
+                .get("deleteFile")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let AppState { store, library: data, .. } = &mut *state;
+            library::remove_track(store, data, id, delete_file)?;
+            store
+                .save_library(data)
+                .map_err(|e| format!("保存失败: {e}"))?;
+            Ok(json!({
+                "tracks": data.tracks,
+                "playlists": data.playlists,
+            }))
+        }
+        "library.dedupe" => {
+            let delete_files = payload
+                .get("deleteFiles")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let AppState { store, library: data, .. } = &mut *state;
+            let removed = library::dedupe_library(store, data, delete_files)?;
+            store
+                .save_library(data)
+                .map_err(|e| format!("保存失败: {e}"))?;
+            Ok(json!({
+                "removed": removed,
+                "tracks": data.tracks,
+                "playlists": data.playlists,
+            }))
         }
         "lyrics.get" => {
             let id = payload

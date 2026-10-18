@@ -227,6 +227,33 @@ final class Player {
         queueIndex = tracks.firstIndex(where: { $0.id == currentTrack.id }) ?? 0
     }
 
+    func handleLibraryChange(_ tracks: [Track]) {
+        let ids = Set(tracks.map(\.id))
+        queue.removeAll { !ids.contains($0.id) }
+        if let currentTrack, !ids.contains(currentTrack.id) {
+            stop()
+        }
+    }
+
+    func stop() {
+        lyricsTask?.cancel()
+        remoteArtworkTask?.cancel()
+        avPlayer?.pause()
+        avPlayer?.replaceCurrentItem(with: nil)
+        currentTrack = nil
+        currentRemote = nil
+        queue = []
+        queueIndex = 0
+        isPlaying = false
+        progress = 0
+        duration = 0
+        lyrics = .empty
+        lyricsLoading = false
+        remoteArtwork = nil
+        showNowPlaying = false
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
     // MARK: - Playback internals
 
     private func startPlayback(url: URL, initialDuration: Double) {

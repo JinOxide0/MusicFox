@@ -51,9 +51,16 @@ struct RootView: View {
             NowPlayingView()
         }
         .overlay(alignment: .top) {
-            if let status = model.importStatus {
-                ImportStatusBar(text: status)
+            VStack(spacing: 6) {
+                if let notice = model.noticeMessage {
+                    NoticeBar(text: notice)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if let status = model.importStatus {
+                    ImportStatusBar(text: status)
+                }
             }
+            .animation(.easeInOut(duration: 0.2), value: model.noticeMessage)
         }
         .alert(
             "出错了",

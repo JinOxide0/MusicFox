@@ -9,11 +9,13 @@ struct SettingsView: View {
     @State private var storageText = "计算中…"
 
     var body: some View {
+        @Bindable var model = model
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     header
                     importSection
+                    importBehaviorSection(model: model)
                     librarySection
                     playbackSection
                     sidesStoreSection
@@ -96,6 +98,66 @@ struct SettingsView: View {
             }
             .glassPanel(corner: 20)
             Text("文件会复制到 文件 App › MusicFox › Media。你也可以直接用文件 App 把音乐拖进这个目录，然后重新扫描。")
+                .font(.system(size: 9))
+                .foregroundStyle(Palette.textTertiary)
+                .lineSpacing(2)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    private func importBehaviorSection(model: AppModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "导入与歌单")
+            VStack(spacing: 0) {
+                SettingsToggleRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    title: "导入时排除重复歌曲",
+                    subtitle: "NCM 解密、文件/文件夹导入都跳过重复项",
+                    isOn: Binding(
+                        get: { model.excludeDuplicatesOnImport },
+                        set: { model.excludeDuplicatesOnImport = $0 }
+                    )
+                )
+                Divider().overlay(Palette.stroke).padding(.leading, 50)
+                SettingsToggleRow(
+                    icon: "music.note.list",
+                    title: "加入歌单时排除重复",
+                    subtitle: "同一首歌不会重复加入同一个歌单",
+                    isOn: Binding(
+                        get: { model.excludeDuplicatesInPlaylists },
+                        set: { model.excludeDuplicatesInPlaylists = $0 }
+                    )
+                )
+                Divider().overlay(Palette.stroke).padding(.leading, 50)
+                NavigationLink {
+                    LibraryManagementView()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Palette.cyan)
+                            .frame(width: 26)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("管理音乐库")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Palette.textPrimary)
+                            Text("删除歌曲文件、清理重复歌曲")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Palette.textTertiary)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 56)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .glassPanel(corner: 20)
+            Text("开启后，重复导入不会增加新的歌曲记录；歌单里也不会出现同名同歌手的重复项。")
                 .font(.system(size: 9))
                 .foregroundStyle(Palette.textTertiary)
                 .lineSpacing(2)
@@ -286,8 +348,8 @@ struct SettingsView: View {
     }
 
     private static var ncmTypes: [UTType] {
-        if let type = UTType(filenameExtension: "ncm") { return [type] }
-        return [.data]
+        // Accept all regular files so file providers cannot grey out .ncm.
+        [.data]
     }
 }
 
@@ -322,6 +384,36 @@ private struct SettingsRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsToggleRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.cyan)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.textPrimary)
+                Text(subtitle)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .tint(Palette.cyan)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 56)
     }
 }
 

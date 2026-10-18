@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -272,6 +272,132 @@ pub fn scan(store: &Store, old: &LibraryData) -> Result<LibraryData, String> {
     Ok(LibraryData { tracks, playlists })
 }
 
+pub fn normalize(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Stable identity used for import and playlist de-duplication.
+pub fn song_key(title: &str, artist: &str, duration: f64) -> String {
+    format!(
+        "{}|{}|{}",
+        normalize(title),
+        normalize(artist),
+        duration.max(0.0).round() as i64
+    )
+}
+
+pub fn track_key(track: &Track) -> String {
+    song_key(&track.title, &track.artist, track.duration)
+}
+
+fn delete_track_files(store: &Store, track: &Track) {
+    let path = PathBuf::from(&track.path);
+    if path.starts_with(&store.media_dir) {
+        let _ = fs::remove_file(&path);
+        for ext in ["musicfox.json", "lrc", "jpg", "jpeg", "png", "webp"] {
+            let _ = fs::remove_file(path.with_extension(ext));
+        }
+    }
+    for ext in ["jpg", "jpeg", "png", "webp"] {
+        let _ = fs::remove_file(store.covers_dir.join(format!("{}.{}", track.id, ext)));
+    }
+}
+
+pub fn remove_track(
+    store: &Store,
+    library: &mut LibraryData,
+    id: &str,
+    delete_files: bool,
+) -> Result<usize, String> {
+    let index = library
+        .tracks
+        .iter()
+        .position(|t| t.id == id)
+        .ok_or_else(|| "找不到这首歌".to_string())?;
+    let track = library.tracks.remove(index);
+    for playlist in &mut library.playlists {
+        playlist.track_ids.retain(|track_id| track_id != id);
+    }
+    if delete_files {
+        delete_track_files(store, &track);
+    }
+    Ok(index)
+}
+
+fn quality_score(track: &Track) -> u64 {
+    let depth = track.bit_depth.unwrap_or(16) as u64;
+    let rate = track.sample_rate.unwrap_or(44_100) as u64;
+    let bitrate = track.bitrate.unwrap_or(0) as u64;
+    depth * 1_000_000_000 + rate * 1000 + bitrate
+}
+
+/// Remove duplicate library entries (same title, artist and duration), keeping
+/// the highest-quality copy. Duplicate files are deleted when requested.
+pub fn dedupe_library(
+    store: &Store,
+    library: &mut LibraryData,
+    delete_files: bool,
+) -> Result<usize, String> {
+    let old_tracks = std::mem::take(&mut library.tracks);
+    let mut keep: Vec<Track> = Vec::new();
+    let mut positions: HashMap<String, usize> = HashMap::new();
+    let mut removed: Vec<Track> = Vec::new();
+
+    for track in old_tracks {
+        let key = track_key(&track);
+        if let Some(&position) = positions.get(&key) {
+            if quality_score(&track) > quality_score(&keep[position]) {
+                let old = std::mem::replace(&mut keep[position], track);
+                removed.push(old);
+            } else {
+                removed.push(track);
+            }
+        } else {
+            positions.insert(key, keep.len());
+            keep.push(track);
+        }
+    }
+
+    if !removed.is_empty() {
+        let removed_ids: HashSet<&str> = removed.iter().map(|t| t.id.as_str()).collect();
+        for playlist in &mut library.playlists {
+            playlist.track_ids.retain(|id| !removed_ids.contains(id.as_str()));
+        }
+        if delete_files {
+            for track in &removed {
+                delete_track_files(store, track);
+            }
+        }
+    }
+    library.tracks = keep;
+    Ok(removed.len())
+}
+
+pub fn dedupe_playlist(library: &mut LibraryData, id: &str) -> Result<usize, String> {
+    let keys: HashMap<String, String> = library
+        .tracks
+        .iter()
+        .map(|track| (track.id.clone(), track_key(track)))
+        .collect();
+    let playlist = library
+        .playlists
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or_else(|| "找不到歌单".to_string())?;
+    let before = playlist.track_ids.len();
+    let mut seen = HashSet::new();
+    playlist.track_ids.retain(|track_id| {
+        let key = keys.get(track_id).cloned().unwrap_or_else(|| track_id.clone());
+        seen.insert(key)
+    });
+    Ok(before - playlist.track_ids.len())
+}
+
 pub fn set_favorite(library: &mut LibraryData, id: &str, favorite: bool) -> Result<(), String> {
     let track = library
         .tracks
@@ -324,16 +450,46 @@ pub fn add_to_playlist(
     library: &mut LibraryData,
     id: &str,
     track_id: &str,
-) -> Result<(), String> {
+    skip_duplicates: bool,
+) -> Result<bool, String> {
+    let target = library
+        .tracks
+        .iter()
+        .find(|t| t.id == track_id)
+        .cloned()
+        .ok_or_else(|| "找不到这首歌".to_string())?;
+
+    let playlist = library
+        .playlists
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| "找不到歌单".to_string())?;
+    if playlist.track_ids.iter().any(|t| t == track_id) {
+        return Ok(false);
+    }
+
+    if skip_duplicates {
+        let target_key = track_key(&target);
+        let duplicate = playlist.track_ids.iter().any(|existing_id| {
+            library
+                .tracks
+                .iter()
+                .find(|t| &t.id == existing_id)
+                .map(|t| track_key(t) == target_key)
+                .unwrap_or(false)
+        });
+        if duplicate {
+            return Ok(false);
+        }
+    }
+
     let playlist = library
         .playlists
         .iter_mut()
         .find(|p| p.id == id)
         .ok_or_else(|| "找不到歌单".to_string())?;
-    if !playlist.track_ids.iter().any(|t| t == track_id) {
-        playlist.track_ids.push(track_id.to_string());
-    }
-    Ok(())
+    playlist.track_ids.push(track_id.to_string());
+    Ok(true)
 }
 
 pub fn remove_from_playlist(

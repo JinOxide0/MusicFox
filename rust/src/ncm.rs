@@ -1,11 +1,12 @@
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use ncmdump::Ncmdump;
 
-use crate::library::{write_sidecar, SidecarMeta};
-use crate::model::{ImportResult, NcmImportSummary};
+use crate::library::{song_key, track_key, write_sidecar, SidecarMeta};
+use crate::model::{ImportResult, LibraryData, NcmImportSummary};
 use crate::store::Store;
 
 fn sanitize_component(input: &str) -> String {
@@ -64,19 +65,21 @@ fn unique_output(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     candidate
 }
 
-fn decrypt_one(store: &Store, source: &Path) -> Result<ImportResult, String> {
+enum DecryptOutcome {
+    Imported(ImportResult, String),
+    Skipped(String),
+}
+
+fn decrypt_one(
+    store: &Store,
+    source: &Path,
+    existing_keys: &HashSet<String>,
+    skip_duplicates: bool,
+) -> Result<DecryptOutcome, String> {
     let file = File::open(source).map_err(|e| format!("无法打开文件: {e}"))?;
     let mut ncm = Ncmdump::from_reader(file).map_err(|e| format!("不是有效的 NCM 文件: {e}"))?;
 
     let info = ncm.get_info().ok();
-    let image = ncm.get_image().ok().filter(|data| !data.is_empty());
-    ncm.seek(SeekFrom::Start(0))
-        .map_err(|e| format!("读取失败: {e}"))?;
-    let data = ncm.get_data().map_err(|e| format!("解密失败: {e}"))?;
-    if data.is_empty() {
-        return Err("解密结果为空".into());
-    }
-
     let title = info
         .as_ref()
         .map(|i| i.name.clone())
@@ -103,6 +106,23 @@ fn decrypt_one(store: &Store, source: &Path) -> Result<ImportResult, String> {
         .map(|i| i.album.clone())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "未知专辑".into());
+    let duration = info
+        .as_ref()
+        .map(|i| i.duration as f64 / 1000.0)
+        .unwrap_or(0.0);
+    let key = song_key(&title, &artist, duration);
+
+    if skip_duplicates && existing_keys.contains(&key) {
+        return Ok(DecryptOutcome::Skipped(format!("{artist} - {title}")));
+    }
+
+    let image = ncm.get_image().ok().filter(|data| !data.is_empty());
+    ncm.seek(SeekFrom::Start(0))
+        .map_err(|e| format!("读取失败: {e}"))?;
+    let data = ncm.get_data().map_err(|e| format!("解密失败: {e}"))?;
+    if data.is_empty() {
+        return Err("解密结果为空".into());
+    }
     let ext = detect_extension(info.as_ref().map(|i| i.format.as_str()), &data);
 
     fs::create_dir_all(&store.media_dir).map_err(|e| format!("无法创建音乐目录: {e}"))?;
@@ -131,26 +151,46 @@ fn decrypt_one(store: &Store, source: &Path) -> Result<ImportResult, String> {
     };
     let _ = write_sidecar(&output, &meta);
 
-    Ok(ImportResult {
-        source: source.to_string_lossy().to_string(),
-        output: output.to_string_lossy().to_string(),
-        title,
-        artist,
-        album,
-        cover_path,
-    })
+    Ok(DecryptOutcome::Imported(
+        ImportResult {
+            source: source.to_string_lossy().to_string(),
+            output: output.to_string_lossy().to_string(),
+            title,
+            artist,
+            album,
+            cover_path,
+        },
+        key,
+    ))
 }
 
-pub fn decrypt_batch(store: &Store, sources: &[String]) -> NcmImportSummary {
+pub fn decrypt_batch(
+    store: &Store,
+    library: &LibraryData,
+    sources: &[String],
+    skip_duplicates: bool,
+) -> NcmImportSummary {
     let mut summary = NcmImportSummary::default();
+    let mut seen: HashSet<String> = if skip_duplicates {
+        library.tracks.iter().map(track_key).collect()
+    } else {
+        HashSet::new()
+    };
+
     for source in sources {
         let path = Path::new(source);
         if !path.is_file() {
             summary.errors.push(format!("文件不存在: {source}"));
             continue;
         }
-        match decrypt_one(store, path) {
-            Ok(result) => summary.imported.push(result),
+        match decrypt_one(store, path, &seen, skip_duplicates) {
+            Ok(DecryptOutcome::Imported(result, key)) => {
+                if skip_duplicates {
+                    seen.insert(key);
+                }
+                summary.imported.push(result);
+            }
+            Ok(DecryptOutcome::Skipped(label)) => summary.skipped.push(label),
             Err(error) => summary.errors.push(format!("{}: {error}", path.display())),
         }
     }
@@ -160,7 +200,6 @@ pub fn decrypt_batch(store: &Store, sources: &[String]) -> NcmImportSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::Store;
 
     #[test]
     fn decrypts_reference_ncm() {
@@ -170,12 +209,33 @@ mod tests {
         }
         let dir = std::env::temp_dir().join(format!("musicfox-ncm-{}", std::process::id()));
         let store = Store::new(dir.join("support"), dir.join("docs")).unwrap();
-        let result = decrypt_one(&store, sample).expect("ncm decrypt");
+        let outcome = decrypt_one(&store, sample, &HashSet::new(), false).expect("ncm decrypt");
+        let DecryptOutcome::Imported(result, _) = outcome else {
+            panic!("expected imported file");
+        };
         assert!(Path::new(&result.output).is_file());
         assert!(!result.title.is_empty());
         let bytes = fs::read(&result.output).unwrap();
         assert!(bytes.starts_with(b"fLaC") || bytes.starts_with(b"ID3"));
         eprintln!("decrypted: {} ({} bytes)", result.output, bytes.len());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn skips_duplicate_ncm() {
+        let sample = Path::new("/tmp/opencode/ncmdump.rs/crates/ncmdump/res/test.ncm");
+        if !sample.exists() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("musicfox-ncm-dup-{}", std::process::id()));
+        let store = Store::new(dir.join("support"), dir.join("docs")).unwrap();
+        let paths = vec![
+            sample.to_string_lossy().to_string(),
+            sample.to_string_lossy().to_string(),
+        ];
+        let summary = decrypt_batch(&store, &LibraryData::default(), &paths, true);
+        assert_eq!(summary.imported.len(), 1);
+        assert_eq!(summary.skipped.len(), 1);
         let _ = fs::remove_dir_all(dir);
     }
 }

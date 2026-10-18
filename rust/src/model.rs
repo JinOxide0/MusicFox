@@ -136,4 +136,6 @@ pub struct ResolveResult {
 pub struct NcmImportSummary {
     pub imported: Vec<ImportResult>,
     pub errors: Vec<String>,
+    #[serde(default)]
+    pub skipped: Vec<String>,
 }

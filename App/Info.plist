@@ -109,6 +109,27 @@
 				</array>
 			</dict>
 		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.netease.ncm</string>
+			<key>UTTypeDescription</key>
+			<string>NetEase Cloud Music Encrypted Audio</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ncm</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-netease-cloud-music</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 </dict>
 </plist>

@@ -2,6 +2,7 @@ import Foundation
 
 struct ImportCopyResult {
     var count: Int = 0
+    var skipped: Int = 0
     var errors: [String] = []
 }
 
@@ -14,10 +15,15 @@ enum ImportManager {
         audioExtensions.contains(url.pathExtension.lowercased())
     }
 
-    static func copyAudio(urls: [URL], to mediaDir: URL) -> ImportCopyResult {
+    static func copyAudio(
+        urls: [URL],
+        to mediaDir: URL,
+        skipDuplicates: Bool
+    ) -> ImportCopyResult {
         var result = ImportCopyResult()
         let fm = FileManager.default
         try? fm.createDirectory(at: mediaDir, withIntermediateDirectories: true)
+        var existing: Set<String> = skipDuplicates ? existingFingerprints(in: mediaDir) : []
 
         for url in urls {
             let scoped = url.startAccessingSecurityScopedResource()
@@ -40,9 +46,14 @@ enum ImportManager {
                     ) else { continue }
                     for case let fileURL as URL in enumerator {
                         guard isAudio(fileURL), !fileURL.path.contains("/.") else { continue }
+                        if skipDuplicates, existing.contains(fingerprint(for: fileURL)) {
+                            result.skipped += 1
+                            continue
+                        }
                         let destination = uniqueFile(folder.appendingPathComponent(fileURL.lastPathComponent))
                         do {
                             try fm.copyItem(at: fileURL, to: destination)
+                            existing.insert(fingerprint(for: destination))
                             result.count += 1
                         } catch {
                             result.errors.append("\(fileURL.lastPathComponent): \(error.localizedDescription)")
@@ -52,17 +63,42 @@ enum ImportManager {
                     result.errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
                 }
             } else if isAudio(url) {
+                if skipDuplicates, existing.contains(fingerprint(for: url)) {
+                    result.skipped += 1
+                    continue
+                }
                 let destination = uniqueFile(mediaDir.appendingPathComponent(url.lastPathComponent))
                 do {
                     if url.standardizedFileURL == destination.standardizedFileURL {
                         continue
                     }
                     try fm.copyItem(at: url, to: destination)
+                    existing.insert(fingerprint(for: destination))
                     result.count += 1
                 } catch {
                     result.errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
+        }
+        return result
+    }
+
+    private static func fingerprint(for url: URL) -> String {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return "\(url.lastPathComponent.lowercased())|\(size)"
+    }
+
+    private static func existingFingerprints(in directory: URL) -> Set<String> {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var result = Set<String>()
+        for case let url as URL in enumerator {
+            guard isAudio(url) else { continue }
+            result.insert(fingerprint(for: url))
         }
         return result
     }

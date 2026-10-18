@@ -390,8 +390,9 @@ struct HomeView: View {
     }
 
     private static var ncmTypes: [UTType] {
-        if let type = UTType(filenameExtension: "ncm") { return [type] }
-        return [.data]
+        // The picker must accept every regular file: some file providers mark
+        // .ncm as a dynamic type, which makes a narrow filter grey out files.
+        [.data]
     }
 }
 

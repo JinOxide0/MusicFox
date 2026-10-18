@@ -20,8 +20,22 @@ final class AppModel {
     var errorMessage: String?
     var resolveQuality = "flac"
     var resolvingRemoteId: String?
+    var noticeMessage: String?
+    var excludeDuplicatesOnImport: Bool {
+        didSet {
+            UserDefaults.standard.set(excludeDuplicatesOnImport, forKey: Self.importDedupeKey)
+        }
+    }
+    var excludeDuplicatesInPlaylists: Bool {
+        didSet {
+            UserDefaults.standard.set(excludeDuplicatesInPlaylists, forKey: Self.playlistDedupeKey)
+        }
+    }
 
     let player = Player()
+
+    private static let importDedupeKey = "MusicFox.excludeDuplicatesOnImport"
+    private static let playlistDedupeKey = "MusicFox.excludeDuplicatesInPlaylists"
 
     private(set) var supportDir: URL?
     private(set) var docsDir: URL?
@@ -29,6 +43,12 @@ final class AppModel {
     private(set) var inboxDir: URL?
 
     init() {
+        let defaults = UserDefaults.standard
+        excludeDuplicatesOnImport =
+            defaults.object(forKey: Self.importDedupeKey) as? Bool ?? true
+        excludeDuplicatesInPlaylists =
+            defaults.object(forKey: Self.playlistDedupeKey) as? Bool ?? true
+
         let fm = FileManager.default
         if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first,
            let documents = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
@@ -75,6 +95,7 @@ final class AppModel {
             )
             tracks = snapshot.tracks
             playlists = snapshot.playlists
+            player.handleLibraryChange(tracks)
             player.setQueue(tracks, keepCurrent: true)
         } catch {
             errorMessage = error.localizedDescription
@@ -87,15 +108,23 @@ final class AppModel {
     func importAudio(_ urls: [URL]) async {
         guard let mediaDir else { return }
         importStatus = "正在导入 \(urls.count) 个项目…"
+        let skipDuplicates = excludeDuplicatesOnImport
         let result = await Task.detached(priority: .utility) {
-            ImportManager.copyAudio(urls: urls, to: mediaDir)
+            ImportManager.copyAudio(
+                urls: urls,
+                to: mediaDir,
+                skipDuplicates: skipDuplicates
+            )
         }.value
         if result.count > 0 {
             importStatus = "正在整理音乐库…"
             await scan(showSpinner: false)
         }
         importStatus = nil
-        if result.count == 0 {
+        if result.skipped > 0 {
+            showNotice("已跳过 \(result.skipped) 个重复文件")
+        }
+        if result.count == 0 && result.skipped == 0 {
             errorMessage = "没有找到可播放的音频文件。支持 FLAC、MP3、M4A、AAC、WAV、AIFF。"
         } else if !result.errors.isEmpty {
             errorMessage = "有 \(result.errors.count) 个文件未能导入：\n" + result.errors.prefix(5).joined(separator: "\n")
@@ -116,12 +145,18 @@ final class AppModel {
         do {
             let summary: NcmImportSummary = try await RustCore.shared.callAsync(
                 "ncm.decrypt",
-                ["paths": copied.map(\.path)],
+                [
+                    "paths": copied.map(\.path),
+                    "skipDuplicates": excludeDuplicatesOnImport
+                ],
                 as: NcmImportSummary.self
             )
             try? FileManager.default.removeItem(at: inboxDir)
             await scan(showSpinner: false)
             importStatus = nil
+            if !summary.skipped.isEmpty {
+                showNotice("已跳过 \(summary.skipped.count) 首重复歌曲")
+            }
             if !summary.errors.isEmpty {
                 errorMessage = summary.errors.prefix(6).joined(separator: "\n")
             }
@@ -238,14 +273,94 @@ final class AppModel {
 
     func add(_ track: Track, to playlist: Playlist) async {
         do {
-            let result: PlaylistMutation = try await RustCore.shared.callAsync(
+            let result: PlaylistAddResponse = try await RustCore.shared.callAsync(
                 "playlist.add",
-                ["id": playlist.id, "trackId": track.id],
-                as: PlaylistMutation.self
+                [
+                    "id": playlist.id,
+                    "trackId": track.id,
+                    "skipDuplicates": excludeDuplicatesInPlaylists
+                ],
+                as: PlaylistAddResponse.self
             )
             playlists = result.playlists
+            if !result.added {
+                showNotice("歌单里已有这首歌")
+            }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func dedupePlaylist(_ playlist: Playlist) async {
+        do {
+            let result: PlaylistDedupeResponse = try await RustCore.shared.callAsync(
+                "playlist.dedupe",
+                ["id": playlist.id],
+                as: PlaylistDedupeResponse.self
+            )
+            playlists = result.playlists
+            showNotice(result.removed > 0 ? "已从歌单移除 \(result.removed) 首重复歌曲" : "歌单没有重复歌曲")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func removeTrack(_ track: Track) async {
+        do {
+            let snapshot: LibrarySnapshot = try await RustCore.shared.callAsync(
+                "library.remove",
+                ["id": track.id, "deleteFile": true],
+                as: LibrarySnapshot.self
+            )
+            tracks = snapshot.tracks
+            playlists = snapshot.playlists
+            player.handleLibraryChange(tracks)
+            showNotice("已删除《\(track.title)》")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func dedupeLibrary() async {
+        do {
+            let result: LibraryDedupeResponse = try await RustCore.shared.callAsync(
+                "library.dedupe",
+                ["deleteFiles": true],
+                as: LibraryDedupeResponse.self
+            )
+            tracks = result.tracks
+            playlists = result.playlists
+            player.handleLibraryChange(tracks)
+            showNotice(
+                result.removed > 0
+                ? "已清理 \(result.removed) 首重复歌曲"
+                : "没有发现重复歌曲"
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    var duplicateCount: Int {
+        var seen = Set<String>()
+        var count = 0
+        for track in tracks {
+            if seen.contains(track.songKey) {
+                count += 1
+            } else {
+                seen.insert(track.songKey)
+            }
+        }
+        return count
+    }
+
+    func showNotice(_ text: String) {
+        noticeMessage = text
+        Task {
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            if noticeMessage == text {
+                noticeMessage = nil
+            }
         }
     }
 

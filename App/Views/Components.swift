@@ -68,6 +68,22 @@ struct TrackRow: View {
                     .frame(width: 30, height: 32)
             }
             .buttonStyle(.plain)
+
+            if let removeFromPlaylist {
+                Menu {
+                    Button(role: .destructive) {
+                        Task { await model.remove(track, from: removeFromPlaylist) }
+                    } label: {
+                        Label("从歌单移除", systemImage: "minus.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.textSecondary)
+                        .frame(width: 28, height: 32)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.vertical, 7)
         .contentShape(Rectangle())
