@@ -5,6 +5,9 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var filter: LibraryFilter = .songs
     @State private var sort: SortOption = .title
+    @State private var isSelecting = false
+    @State private var selectedIDs = Set<String>()
+    @State private var showPlaylistPicker = false
 
     private enum SortOption: String, CaseIterable, Identifiable {
         case title = "标题"
@@ -21,7 +24,9 @@ struct LibraryView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
                     SearchField(text: $searchText, placeholder: "搜索歌曲、专辑、艺术家")
-                    filterBar
+                    if !isSelecting {
+                        filterBar
+                    }
                     content
                 }
                 .padding(.horizontal, 18)
@@ -30,10 +35,105 @@ struct LibraryView: View {
             }
             .scrollIndicators(.hidden)
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showPlaylistPicker) {
+                PlaylistPickerSheet(tracks: selectedTracks) {
+                    exitSelection()
+                }
+                .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
 
+    private var selectedTracks: [Track] {
+        let map = Dictionary(uniqueKeysWithValues: model.tracks.map { ($0.id, $0) })
+        return selectedIDs.compactMap { map[$0] }
+    }
+
+    private var allFilteredSelected: Bool {
+        !filteredTracks.isEmpty && filteredTracks.allSatisfy { selectedIDs.contains($0.id) }
+    }
+
+    private func toggleSelection(_ track: Track) {
+        if selectedIDs.contains(track.id) {
+            selectedIDs.remove(track.id)
+        } else {
+            selectedIDs.insert(track.id)
+        }
+    }
+
+    private func startSelecting() {
+        filter = .songs
+        isSelecting = true
+    }
+
+    private func exitSelection() {
+        isSelecting = false
+        selectedIDs.removeAll()
+    }
+
+    @ViewBuilder
     private var header: some View {
+        if isSelecting {
+            selectionHeader
+        } else {
+            normalHeader
+        }
+    }
+
+    private var selectionHeader: some View {
+        HStack(spacing: 10) {
+            Button("取消") {
+                exitSelection()
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Palette.textSecondary)
+            .frame(height: 38)
+            .padding(.horizontal, 12)
+            .background(Palette.surfaceElevated, in: Capsule())
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("已选 \(selectedIDs.count) 首")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("点歌曲继续多选")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            Spacer(minLength: 2)
+            Button(allFilteredSelected ? "取消全选" : "全选") {
+                if allFilteredSelected {
+                    selectedIDs.subtract(filteredTracks.map(\.id))
+                } else {
+                    selectedIDs.formUnion(filteredTracks.map(\.id))
+                }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Palette.cyan)
+            .frame(height: 38)
+            .buttonStyle(.plain)
+
+            Button {
+                showPlaylistPicker = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "text.badge.plus")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("加入歌单")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(Color(hex: 0x05060A))
+                .padding(.horizontal, 12)
+                .frame(height: 38)
+                .background(Palette.accentGradient, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedIDs.isEmpty)
+            .opacity(selectedIDs.isEmpty ? 0.45 : 1)
+        }
+    }
+
+    private var normalHeader: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("音乐库")
@@ -66,6 +166,18 @@ struct LibraryView: View {
                     .frame(width: 38, height: 38)
                     .background(Palette.surfaceElevated, in: Circle())
                     .overlay(Circle().stroke(Palette.stroke, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            Button {
+                startSelecting()
+            } label: {
+                Text("选择")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.horizontal, 11)
+                    .frame(height: 38)
+                    .background(Palette.surfaceElevated, in: Capsule())
+                    .overlay(Capsule().stroke(Palette.stroke, lineWidth: 1))
             }
             .buttonStyle(.plain)
         }
@@ -145,7 +257,13 @@ struct LibraryView: View {
     private var songList: some View {
         LazyVStack(spacing: 0) {
             ForEach(Array(filteredTracks.enumerated()), id: \.element.id) { index, track in
-                TrackRow(track: track, showAlbum: true)
+                TrackRow(
+                    track: track,
+                    showAlbum: true,
+                    selectionMode: isSelecting,
+                    isSelected: selectedIDs.contains(track.id),
+                    onToggleSelection: { toggleSelection(track) }
+                )
                 if index < filteredTracks.count - 1 {
                     Divider().overlay(Palette.stroke).padding(.leading, 64)
                 }

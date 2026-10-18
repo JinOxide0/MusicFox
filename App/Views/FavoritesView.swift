@@ -7,6 +7,9 @@ struct FavoritesView: View {
     @State private var editingPlaylist: Playlist?
     @State private var renameText = ""
     @State private var deletingPlaylist: Playlist?
+    @State private var isSelecting = false
+    @State private var selectedIDs = Set<String>()
+    @State private var showPlaylistPicker = false
 
     var body: some View {
         NavigationStack {
@@ -14,7 +17,9 @@ struct FavoritesView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     header
                     favorites
-                    playlists
+                    if !isSelecting {
+                        playlists
+                    }
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 10)
@@ -24,6 +29,13 @@ struct FavoritesView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Playlist.self) { playlist in
                 PlaylistDetailView(playlist: playlist)
+            }
+            .sheet(isPresented: $showPlaylistPicker) {
+                PlaylistPickerSheet(tracks: selectedFavorites) {
+                    exitSelection()
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showCreatePlaylist) {
                 createPlaylistSheet
@@ -56,7 +68,89 @@ struct FavoritesView: View {
         }
     }
 
+    private var selectedFavorites: [Track] {
+        model.favoriteTracks.filter { selectedIDs.contains($0.id) }
+    }
+
+    private var allFavoritesSelected: Bool {
+        !model.favoriteTracks.isEmpty && model.favoriteTracks.allSatisfy { selectedIDs.contains($0.id) }
+    }
+
+    private func toggleSelection(_ track: Track) {
+        if selectedIDs.contains(track.id) {
+            selectedIDs.remove(track.id)
+        } else {
+            selectedIDs.insert(track.id)
+        }
+    }
+
+    private func exitSelection() {
+        isSelecting = false
+        selectedIDs.removeAll()
+    }
+
+    @ViewBuilder
     private var header: some View {
+        if isSelecting {
+            selectionHeader
+        } else {
+            normalHeader
+        }
+    }
+
+    private var selectionHeader: some View {
+        HStack(spacing: 10) {
+            Button("取消") {
+                exitSelection()
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Palette.textSecondary)
+            .frame(height: 38)
+            .padding(.horizontal, 12)
+            .background(Palette.surfaceElevated, in: Capsule())
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("已选 \(selectedIDs.count) 首")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("从收藏中多选")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            Spacer(minLength: 2)
+            Button(allFavoritesSelected ? "取消全选" : "全选") {
+                if allFavoritesSelected {
+                    selectedIDs.removeAll()
+                } else {
+                    selectedIDs.formUnion(model.favoriteTracks.map(\.id))
+                }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Palette.cyan)
+            .frame(height: 38)
+            .buttonStyle(.plain)
+
+            Button {
+                showPlaylistPicker = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "text.badge.plus")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("加入歌单")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(Color(hex: 0x05060A))
+                .padding(.horizontal, 12)
+                .frame(height: 38)
+                .background(Palette.accentGradient, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedIDs.isEmpty)
+            .opacity(selectedIDs.isEmpty ? 0.45 : 1)
+        }
+    }
+
+    private var normalHeader: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("收藏")
@@ -66,6 +160,20 @@ struct FavoritesView: View {
                     .foregroundStyle(Palette.textSecondary)
             }
             Spacer()
+            if !model.favoriteTracks.isEmpty {
+                Button {
+                    isSelecting = true
+                } label: {
+                    Text("选择")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.cyan)
+                        .padding(.horizontal, 11)
+                        .frame(height: 38)
+                        .background(Palette.surfaceElevated, in: Capsule())
+                        .overlay(Capsule().stroke(Palette.stroke, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
             Button {
                 newPlaylistName = ""
                 showCreatePlaylist = true
@@ -93,7 +201,13 @@ struct FavoritesView: View {
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(model.favoriteTracks.enumerated()), id: \.element.id) { index, track in
-                        TrackRow(track: track, showAlbum: true)
+                        TrackRow(
+                            track: track,
+                            showAlbum: true,
+                            selectionMode: isSelecting,
+                            isSelected: selectedIDs.contains(track.id),
+                            onToggleSelection: { toggleSelection(track) }
+                        )
                         if index < model.favoriteTracks.count - 1 {
                             Divider().overlay(Palette.stroke).padding(.leading, 64)
                         }

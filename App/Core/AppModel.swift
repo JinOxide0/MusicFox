@@ -291,6 +291,31 @@ final class AppModel {
         }
     }
 
+    func add(_ tracks: [Track], to playlist: Playlist) async {
+        guard !tracks.isEmpty else { return }
+        do {
+            let result: PlaylistAddManyResponse = try await RustCore.shared.callAsync(
+                "playlist.addMany",
+                [
+                    "id": playlist.id,
+                    "trackIds": tracks.map(\.id),
+                    "skipDuplicates": excludeDuplicatesInPlaylists
+                ],
+                as: PlaylistAddManyResponse.self
+            )
+            playlists = result.playlists
+            if result.added == 0 {
+                showNotice("这些歌曲已在歌单里")
+            } else if result.skipped > 0 {
+                showNotice("已加入 \(result.added) 首，跳过 \(result.skipped) 首重复")
+            } else {
+                showNotice("已加入 \(result.added) 首歌曲")
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func dedupePlaylist(_ playlist: Playlist) async {
         do {
             let result: PlaylistDedupeResponse = try await RustCore.shared.callAsync(

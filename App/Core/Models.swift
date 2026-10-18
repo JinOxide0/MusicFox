@@ -132,6 +132,12 @@ struct PlaylistAddResponse: Codable {
     var added: Bool
 }
 
+struct PlaylistAddManyResponse: Codable {
+    var playlists: [Playlist]
+    var added: Int
+    var skipped: Int
+}
+
 struct PlaylistDedupeResponse: Codable {
     var playlists: [Playlist]
     var removed: Int

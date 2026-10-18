@@ -6,16 +6,27 @@ struct TrackRow: View {
     var showAlbum = false
     var showCover = true
     var removeFromPlaylist: Playlist? = nil
+    var selectionMode = false
+    var isSelected = false
+    var onToggleSelection: (() -> Void)? = nil
 
     private var isCurrent: Bool {
         model.player.currentTrack?.id == track.id
+    }
+
+    private func handleTap() {
+        if selectionMode {
+            onToggleSelection?()
+        } else {
+            model.play(track)
+        }
     }
 
     var body: some View {
         HStack(spacing: 12) {
             if showCover {
                 Button {
-                    model.play(track)
+                    handleTap()
                 } label: {
                     ZStack(alignment: .bottomTrailing) {
                         CoverArt(url: track.coverURL, size: 52, corner: 12)
@@ -59,38 +70,52 @@ struct TrackRow: View {
                     .foregroundStyle(Palette.textTertiary)
             }
 
-            Button {
-                model.toggleFavorite(track)
-            } label: {
-                Image(systemName: track.favorite ? "heart.fill" : "heart")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(track.favorite ? Palette.pink : Palette.textTertiary)
+            if selectionMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(isSelected ? Palette.cyan : Palette.textTertiary)
                     .frame(width: 30, height: 32)
-            }
-            .buttonStyle(.plain)
-
-            if let removeFromPlaylist {
-                Menu {
-                    Button(role: .destructive) {
-                        Task { await model.remove(track, from: removeFromPlaylist) }
-                    } label: {
-                        Label("从歌单移除", systemImage: "minus.circle")
-                    }
+            } else {
+                Button {
+                    model.toggleFavorite(track)
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: track.favorite ? "heart.fill" : "heart")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.textSecondary)
-                        .frame(width: 28, height: 32)
+                        .foregroundStyle(track.favorite ? Palette.pink : Palette.textTertiary)
+                        .frame(width: 30, height: 32)
                 }
                 .buttonStyle(.plain)
+
+                if let removeFromPlaylist {
+                    Menu {
+                        Button(role: .destructive) {
+                            Task { await model.remove(track, from: removeFromPlaylist) }
+                        } label: {
+                            Label("从歌单移除", systemImage: "minus.circle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Palette.textSecondary)
+                            .frame(width: 28, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(.vertical, 7)
         .contentShape(Rectangle())
         .onTapGesture {
-            model.play(track)
+            handleTap()
         }
         .contextMenu {
+            if selectionMode {
+                Button {
+                    onToggleSelection?()
+                } label: {
+                    Label(isSelected ? "取消选择" : "选择", systemImage: isSelected ? "checkmark.circle.fill" : "circle")
+                }
+            } else {
             Button {
                 model.play(track)
             } label: {
@@ -122,6 +147,7 @@ struct TrackRow: View {
                 } label: {
                     Label("从歌单移除", systemImage: "minus.circle")
                 }
+            }
             }
         }
     }

@@ -172,6 +172,43 @@ fn handle(cmd: &str, payload: &Value) -> Result<Value, String> {
                 "added": added
             }))
         }
+        "playlist.addMany" => {
+            let id = payload
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("缺少歌单 ID")?;
+            let track_ids: Vec<String> = payload
+                .get("trackIds")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .ok_or("缺少歌曲列表")?;
+            let skip_duplicates = payload
+                .get("skipDuplicates")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let mut added = 0usize;
+            let mut skipped = 0usize;
+            for track_id in &track_ids {
+                if library::add_to_playlist(
+                    &mut state.library,
+                    id,
+                    track_id,
+                    skip_duplicates,
+                )? {
+                    added += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            state
+                .store
+                .save_library(&state.library)
+                .map_err(|e| format!("保存失败: {e}"))?;
+            Ok(json!({
+                "playlists": state.library.playlists,
+                "added": added,
+                "skipped": skipped
+            }))
+        }
         "playlist.dedupe" => {
             let id = payload
                 .get("id")
