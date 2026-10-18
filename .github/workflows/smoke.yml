@@ -66,6 +66,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             LIBRARY_SEARCH_PATHS="$PWD/rust/target/$SIM_TARGET/release" \
             OTHER_LDFLAGS='$(inherited) -lmusicfox_core -framework Security -framework CoreFoundation' \
             | tee xcodebuild-sim.log
