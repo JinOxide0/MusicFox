@@ -27,6 +27,17 @@ jobs:
         with:
           targets: aarch64-apple-ios
 
+      - name: Configure libclang for bindgen
+        run: |
+          LIBCLANG="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          if [ -f "$LIBCLANG/libclang.dylib" ]; then
+            echo "LIBCLANG_PATH=$LIBCLANG" >> "$GITHUB_ENV"
+          else
+            brew install llvm
+            echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+          fi
+          echo "SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)" >> "$GITHUB_ENV"
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
