@@ -9,9 +9,7 @@ struct NowPlayingView: View {
         @Bindable var player = model.player
         GeometryReader { proxy in
             let coverSize = min(proxy.size.width - 68, min(proxy.size.height * 0.40, 330))
-            ZStack {
-                PlayerBackground(player: player)
-                VStack(spacing: 0) {
+            VStack(spacing: 0) {
                     topBar
 
                     if showLyrics {
@@ -37,9 +35,14 @@ struct NowPlayingView: View {
                     bottomBar
                         .padding(.top, 10)
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, max(proxy.safeAreaInsets.bottom, 10))
-            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, max(proxy.safeAreaInsets.bottom, 10))
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .background(
+                PlayerBackground(player: player)
+                    .ignoresSafeArea()
+            )
+            .clipped()
         }
         .sheet(isPresented: $showQueue) {
             QueueView()
